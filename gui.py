@@ -66,6 +66,7 @@ class ImageApp:
         self.processing_in_progress = False
         self.save_in_progress = False
 
+<<<<<<< HEAD
         # Tryb przetwarzania całego folderu przez kolejki Producer-Consumer
         self.batch_processing = False
         self.batch_output_folder = None
@@ -75,11 +76,14 @@ class ImageApp:
         self.batch_job_ids = set()
         self.batch_output_paths = {}
 
+=======
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         self.loader_thread = LoaderThread(
             self.loader_task_queue,
             self.loader_result_queue
         )
 
+<<<<<<< HEAD
         self.image_analyzer_thread_1 = ImageAnalyzerThread(
             self.analyzer_task_queue,
             self.analyzer_result_queue,
@@ -90,6 +94,11 @@ class ImageApp:
             self.analyzer_task_queue,
             self.analyzer_result_queue,
             name="ImageAnalyzerThread-2"
+=======
+        self.image_analyzer_thread = ImageAnalyzerThread(
+            self.analyzer_task_queue,
+            self.analyzer_result_queue
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         )
 
         self.saver_thread = SaverThread(
@@ -103,8 +112,12 @@ class ImageApp:
         )
 
         self.loader_thread.start()
+<<<<<<< HEAD
         self.image_analyzer_thread_1.start()
         self.image_analyzer_thread_2.start()
+=======
+        self.image_analyzer_thread.start()
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         self.saver_thread.start()
         self.controller_thread.start()
 
@@ -452,7 +465,11 @@ class ImageApp:
 
         self.debug_label = tk.Label(
             bottom_frame,
+<<<<<<< HEAD
             text="Załadowane=0 | Przetworzone=0 | Indeks=0/0 | Analiza=nie | Zapis=nie | Analizatory=2",
+=======
+            text="Załadowane=0 | Przetworzone=0 | Indeks=0/0 | Analiza=nie | Zapis=nie",
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
             bg=self.bg_main,
             fg=self.text_color,
             font=("Arial", 9)
@@ -503,16 +520,26 @@ class ImageApp:
                 if result_type == "state":
                     self.analyzer_state = result["new_state"]
                     event = result.get("event", "")
+<<<<<<< HEAD
                     worker = result.get("worker", "ImageAnalyzerThread")
 
                     self.analyzer_state_label.config(
                         text=f"Stan analizatora: {self.analyzer_state} ({worker})"
+=======
+
+                    self.analyzer_state_label.config(
+                        text=f"Stan analizatora: {self.analyzer_state}"
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                     )
 
                     if event:
                         print(
                             f"Analyzer state: {result['old_state']} -> "
+<<<<<<< HEAD
                             f"{result['new_state']} | worker: {worker} | event: {event}"
+=======
+                            f"{result['new_state']} | event: {event}"
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                         )
 
                     continue
@@ -520,17 +547,21 @@ class ImageApp:
                 if result_type == "result":
                     result_job_id = result.get("job_id")
                     result_index = result.get("image_index")
+<<<<<<< HEAD
                     result_mode = result.get("mode", "single")
                     worker = result.get("worker", "ImageAnalyzerThread")
 
                     # Jeżeli użytkownik przerwał batch, ignorujemy spóźnione wyniki.
                     if result_mode == "batch" and not self.batch_processing:
                         continue
+=======
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
 
                     if result_job_id in self.cancelled_jobs:
                         self.cancelled_jobs.discard(result_job_id)
                         continue
 
+<<<<<<< HEAD
                     # Dla pojedynczego obrazu pilnujemy aktywnego job_id.
                     # Dla folderu jobów jest wiele, więc nie stosujemy active_job_id.
                     if result_mode != "batch":
@@ -569,6 +600,16 @@ class ImageApp:
                         self.start_button.config(state="normal")
                         self.active_job_id = None
 
+=======
+                    if self.active_job_id is not None and result_job_id != self.active_job_id:
+                        continue
+
+                    self.processing_in_progress = False
+                    self.start_button.config(state="normal")
+                    self.active_job_id = None
+
+                    if result["status"] == "success":
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                         self.processed_results[result_index] = {
                             "image": result["image"].copy(),
                             "filter": result["filter"]
@@ -581,7 +622,11 @@ class ImageApp:
                             self.display_image(self.processed_image, "processed")
                             self.progress["value"] = 100
                             self.set_status(
+<<<<<<< HEAD
                                 f"Status: zastosowano algorytm {result['filter']} przez {worker}"
+=======
+                                f"Status: zastosowano algorytm {result['filter']} przez ImageAnalyzerThread"
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                             )
                             self.request_controller_state("READY", "Analiza obrazu zakończona")
                         else:
@@ -602,6 +647,7 @@ class ImageApp:
                             )
 
                     else:
+<<<<<<< HEAD
                         if result_mode == "batch":
                             self.batch_processing = False
                             self.processing_in_progress = False
@@ -616,6 +662,8 @@ class ImageApp:
                             )
                             continue
 
+=======
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                         if result_index == self.current_index:
                             self.progress["value"] = 0
 
@@ -623,7 +671,11 @@ class ImageApp:
                         self.start_button.config(state="normal")
                         self.active_job_id = None
 
+<<<<<<< HEAD
                         self.set_status(f"Status: błąd w {worker}")
+=======
+                        self.set_status("Status: błąd w ImageAnalyzerThread")
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                         self.request_controller_state("ERROR", "Błąd analizy obrazu")
                         messagebox.showerror(
                             "Błąd",
@@ -639,20 +691,27 @@ class ImageApp:
         loaded_count = len(self.loaded_images)
         processed_count = len(self.processed_results)
 
+<<<<<<< HEAD
         if self.batch_processing:
             mode_text = f"Batch={self.batch_saved}/{self.batch_total}"
         else:
             mode_text = "Batch=nie"
 
+=======
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         debug_text = (
             f"Załadowane={loaded_count} | "
             f"Przetworzone={processed_count} | "
             f"Indeks={self.current_index + 1 if self.current_index >= 0 else 0}/"
             f"{len(self.image_paths)} | "
             f"Analiza={'tak' if self.processing_in_progress else 'nie'} | "
+<<<<<<< HEAD
             f"Zapis={'tak' if self.save_in_progress else 'nie'} | "
             f"Analizatory=2 | "
             f"{mode_text}"
+=======
+            f"Zapis={'tak' if self.save_in_progress else 'nie'}"
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         )
 
         self.debug_label.config(text=debug_text)
@@ -679,8 +738,12 @@ class ImageApp:
         self.loader_task_queue.put({
             "cmd": "LOAD_IMAGE",
             "path": self.image_paths[index],
+<<<<<<< HEAD
             "index": index,
             "mode": "single"
+=======
+            "index": index
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         })
 
     def show_image_from_cache(self, index):
@@ -751,6 +814,7 @@ class ImageApp:
         self.active_job_id = None
         self.cancelled_jobs.clear()
 
+<<<<<<< HEAD
         self.batch_processing = False
         self.batch_output_folder = None
         self.batch_filter = None
@@ -759,6 +823,8 @@ class ImageApp:
         self.batch_job_ids.clear()
         self.batch_output_paths.clear()
 
+=======
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         self.processed_canvas.delete("all")
         self.processed_canvas.create_text(
             int(self.processed_canvas["width"]) // 2,
@@ -810,6 +876,7 @@ class ImageApp:
         self.active_job_id = None
         self.cancelled_jobs.clear()
 
+<<<<<<< HEAD
         self.batch_processing = False
         self.batch_output_folder = None
         self.batch_filter = None
@@ -818,6 +885,8 @@ class ImageApp:
         self.batch_job_ids.clear()
         self.batch_output_paths.clear()
 
+=======
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         self.progress["value"] = 0
 
         self.processed_canvas.delete("all")
@@ -842,11 +911,15 @@ class ImageApp:
 
                 self.load_button.config(state="normal")
                 index = result.get("index")
+<<<<<<< HEAD
                 result_mode = result.get("mode", "single")
+=======
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
 
                 if result["status"] == "success":
                     self.loaded_images[index] = (result["path"], result["image"])
 
+<<<<<<< HEAD
                     if result_mode == "batch":
                         if not self.batch_processing:
                             continue
@@ -877,6 +950,16 @@ class ImageApp:
                         self.request_controller_state("ERROR", "Błąd wczytywania obrazu")
 
                     messagebox.showerror("Błąd", f"Nie udało się wczytać obrazu:\n{result['error']}")
+=======
+                    if index == self.current_index and self.current_image is None:
+                        self.show_image_from_cache(index)
+
+                    self.request_load_for_index(index + 1)
+                else:
+                    messagebox.showerror("Błąd", f"Nie udało się wczytać obrazu:\n{result['error']}")
+                    self.set_status("Status: błąd w LoaderThread")
+                    self.request_controller_state("ERROR", "Błąd wczytywania obrazu")
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
 
         except queue.Empty:
             pass
@@ -910,14 +993,19 @@ class ImageApp:
             "image": self.current_image.copy(),
             "filter": selected_filter,
             "job_id": job_id,
+<<<<<<< HEAD
             "image_index": self.current_index,
             "mode": "single"
+=======
+            "image_index": self.current_index
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         })
 
     def check_saver_queue(self):
         try:
             while True:
                 result = self.saver_result_queue.get_nowait()
+<<<<<<< HEAD
                 result_mode = result.get("mode", "single")
 
                 if result_mode == "batch" and not self.batch_processing:
@@ -973,6 +1061,19 @@ class ImageApp:
                         self.set_status("Status: błąd w SaverThread")
                         self.request_controller_state("ERROR", "Błąd zapisu obrazu")
                         messagebox.showerror("Błąd", f"Nie udało się zapisać obrazu:\n{result['error']}")
+=======
+                self.save_in_progress = False
+                self.save_button.config(state="normal")
+
+                if result["status"] == "success":
+                    self.set_status("Status: zapis zakończony przez SaverThread")
+                    self.request_controller_state("READY", "Zapis zakończony")
+                    messagebox.showinfo("Zapisano", f"Plik zapisano w:\n{result['output_path']}")
+                else:
+                    self.set_status("Status: błąd w SaverThread")
+                    self.request_controller_state("ERROR", "Błąd zapisu obrazu")
+                    messagebox.showerror("Błąd", f"Nie udało się zapisać obrazu:\n{result['error']}")
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
 
         except queue.Empty:
             pass
@@ -1010,6 +1111,7 @@ class ImageApp:
             self.set_status("Status: najpierw wczytaj folder")
             return
 
+<<<<<<< HEAD
         if self.batch_processing:
             self.set_status("Status: folder jest już przetwarzany")
             return
@@ -1080,6 +1182,53 @@ class ImageApp:
                     "filter": selected_filter,
                     "mode": "batch"
                 })
+=======
+        output_folder = filedialog.askdirectory(title="Wybierz folder do zapisu wyników")
+        if not output_folder:
+            return
+
+        selected_filter = self.filter_box.get()
+        total_files = len(self.image_paths)
+
+        self.request_controller_state("PROCESSING", "Przetwarzanie całego folderu")
+
+        try:
+            for index, path in enumerate(self.image_paths):
+                image = Image.open(path)
+
+                if selected_filter == "Grayscale":
+                    processed = apply_grayscale(image)
+                elif selected_filter == "Blur":
+                    processed = apply_blur(image)
+                elif selected_filter == "Edges":
+                    processed = apply_edges(image)
+                elif selected_filter == "Binary":
+                    processed = apply_binary(image)
+                else:
+                    raise ValueError("Nieznany filtr")
+
+                base_name = os.path.basename(path)
+                name, ext = os.path.splitext(base_name)
+                output_path = os.path.join(output_folder, f"{name}_{selected_filter.lower()}{ext}")
+
+                processed.save(output_path)
+
+                self.progress["value"] = ((index + 1) / total_files) * 100
+                self.root.update_idletasks()
+
+            self.set_status(f"Status: przetworzono cały folder filtrem {selected_filter}")
+            self.request_controller_state("READY", "Przetwarzanie folderu zakończone")
+            messagebox.showinfo(
+                "Gotowe",
+                f"Przetworzono {total_files} obrazów.\nWyniki zapisano w:\n{output_folder}"
+            )
+
+        except Exception as error:
+            messagebox.showerror("Błąd", f"Nie udało się przetworzyć folderu:\n{error}")
+            self.set_status("Status: błąd przetwarzania folderu")
+            self.request_controller_state("ERROR", "Błąd przetwarzania folderu")
+            self.progress["value"] = 0
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
 
     def save_result(self):
         if self.processed_image is None:
@@ -1138,8 +1287,12 @@ class ImageApp:
             self.saver_task_queue.put({
                 "cmd": "SAVE_IMAGE",
                 "image": self.processed_image.copy(),
+<<<<<<< HEAD
                 "output_path": output_path,
                 "mode": "single"
+=======
+                "output_path": output_path
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
             })
 
         except Exception as error:
@@ -1148,6 +1301,7 @@ class ImageApp:
             messagebox.showerror("Błąd", f"Nie udało się przygotować zapisu:\n{error}")
 
     def abort_processing(self):
+<<<<<<< HEAD
         if self.batch_processing:
             self.batch_processing = False
             self.processing_in_progress = False
@@ -1164,6 +1318,8 @@ class ImageApp:
             self.request_controller_state("ABORTED", "Anulowano przetwarzanie całego folderu")
             return
 
+=======
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         if not self.processing_in_progress or self.active_job_id is None:
             self.set_status("Status: brak aktywnej operacji do anulowania")
             self.progress["value"] = 0
@@ -1179,11 +1335,15 @@ class ImageApp:
 
     def on_close(self):
         self.loader_task_queue.put({"cmd": "STOP"})
+<<<<<<< HEAD
 
         # Dwa komunikaty STOP, bo działają dwa wątki analizatora.
         self.analyzer_task_queue.put({"cmd": "STOP"})
         self.analyzer_task_queue.put({"cmd": "STOP"})
 
+=======
+        self.analyzer_task_queue.put({"cmd": "STOP"})
+>>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
         self.saver_task_queue.put({"cmd": "STOP"})
         self.controller_task_queue.put({"cmd": "STOP"})
         self.root.destroy()
