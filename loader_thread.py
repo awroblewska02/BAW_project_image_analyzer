@@ -30,14 +30,11 @@ class LoaderThread(threading.Thread):
                 file_path = task.get("path")
                 index = task.get("index")
 
-<<<<<<< HEAD
                 # Dodatkowe pola używane przy przetwarzaniu całego folderu
                 job_id = task.get("job_id")
                 selected_filter = task.get("filter")
                 mode = task.get("mode", "single")
 
-=======
->>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                 try:
                     image = Image.open(file_path)
                     image.load()
@@ -46,28 +43,19 @@ class LoaderThread(threading.Thread):
                         "status": "success",
                         "path": file_path,
                         "index": index,
-<<<<<<< HEAD
                         "image": image,
                         "job_id": job_id,
                         "filter": selected_filter,
                         "mode": mode
                     })
 
-=======
-                        "image": image
-                    })
->>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                 except Exception as error:
                     self.result_queue.put({
                         "status": "error",
                         "path": file_path,
                         "index": index,
-<<<<<<< HEAD
                         "error": str(error),
                         "job_id": job_id,
                         "filter": selected_filter,
                         "mode": mode
-=======
-                        "error": str(error)
->>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                     })

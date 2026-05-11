@@ -30,14 +30,11 @@ class SaverThread(threading.Thread):
                 image = task.get("image")
                 output_path = task.get("output_path")
 
-<<<<<<< HEAD
                 # Dodatkowe pola używane przy przetwarzaniu całego folderu
                 job_id = task.get("job_id")
                 image_index = task.get("image_index")
                 mode = task.get("mode", "single")
 
-=======
->>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                 try:
                     folder = os.path.dirname(output_path)
                     if folder:
@@ -47,7 +44,6 @@ class SaverThread(threading.Thread):
 
                     self.result_queue.put({
                         "status": "success",
-<<<<<<< HEAD
                         "output_path": output_path,
                         "job_id": job_id,
                         "image_index": image_index,
@@ -61,12 +57,4 @@ class SaverThread(threading.Thread):
                         "job_id": job_id,
                         "image_index": image_index,
                         "mode": mode
-=======
-                        "output_path": output_path
-                    })
-                except Exception as error:
-                    self.result_queue.put({
-                        "status": "error",
-                        "error": str(error)
->>>>>>> 7ef02b2bd1b2bfa4279f95537273f15b108b01dd
                     })
