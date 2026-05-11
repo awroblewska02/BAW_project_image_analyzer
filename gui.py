@@ -6,15 +6,20 @@ from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 
 from image_filters import apply_grayscale, apply_blur, apply_edges, apply_binary
-from loader_thread import loader_worker
+from loader_thread import LoaderThread
+from filter_thread import FilterThread
+from saver_thread import SaverThread
 
 
 class ImageApp:
     def __init__(self):
+        print("GUI thread:", threading.current_thread().name)
+        print("GUI thread id:", threading.get_ident())
+
         self.root = tk.Tk()
         self.root.title("Analizator obrazów")
-        self.root.geometry("1320x760")
-        self.root.minsize(1180, 700)
+        self.root.geometry("1320x820")
+        self.root.minsize(1180, 760)
 
         self.bg_main = "#dff4ff"
         self.bg_panel = "#cfefff"
@@ -36,11 +41,50 @@ class ImageApp:
         self.preview_width = 430
         self.preview_height = 280
 
-        # ===== WIELOWĄTKOWOŚĆ - LOADER THREAD =====
-        self.loader_queue = queue.Queue()
-        self.loader_thread = None
+        self.loader_task_queue = queue.Queue()
+        self.loader_result_queue = queue.Queue()
+
+        self.filter_task_queue = queue.Queue()
+        self.filter_result_queue = queue.Queue()
+
+        self.saver_task_queue = queue.Queue()
+        self.saver_result_queue = queue.Queue()
+
+        self.loaded_images = {}
+        self.loading_requested = set()
+        self.processed_results = {}
+
+        self.next_job_id = 1
+        self.active_job_id = None
+        self.cancelled_jobs = set()
+        self.processing_in_progress = False
+        self.save_in_progress = False
+
+        self.loader_thread = LoaderThread(
+            self.loader_task_queue,
+            self.loader_result_queue
+        )
+        self.filter_thread = FilterThread(
+            self.filter_task_queue,
+            self.filter_result_queue
+        )
+        self.saver_thread = SaverThread(
+            self.saver_task_queue,
+            self.saver_result_queue
+        )
+
+        self.loader_thread.start()
+        self.filter_thread.start()
+        self.saver_thread.start()
 
         self._build_ui()
+
+        self.root.after(100, self.check_loader_queue)
+        self.root.after(100, self.check_filter_queue)
+        self.root.after(100, self.check_saver_queue)
+        self.root.after(300, self.update_debug_info)
+
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def _build_ui(self):
         self.root.grid_rowconfigure(0, weight=0)
@@ -58,7 +102,6 @@ class ImageApp:
         )
         title_label.grid(row=0, column=0, columnspan=2, pady=(12, 10))
 
-        # ===== LEWY PANEL =====
         left_panel = tk.Frame(
             self.root,
             bg=self.bg_panel,
@@ -139,9 +182,15 @@ class ImageApp:
             wraplength=180,
             justify="center"
         )
-        self.info_label.pack(pady=(18, 0))
+        self.info_label.pack(pady=(18, 4))
 
-        # ===== PRAWA GŁÓWNA CZĘŚĆ =====
+        self.image_index_progress = ttk.Progressbar(
+            left_panel,
+            length=180,
+            mode="determinate"
+        )
+        self.image_index_progress.pack(pady=(0, 4))
+
         main_area = tk.Frame(self.root, bg=self.bg_main)
         main_area.grid(row=1, column=1, sticky="nsew", padx=(0, 18), pady=(0, 12))
 
@@ -149,7 +198,6 @@ class ImageApp:
         main_area.grid_rowconfigure(1, weight=1)
         main_area.grid_columnconfigure(0, weight=1)
 
-        # ===== GÓRNA BELKA =====
         top_bar = tk.Frame(main_area, bg=self.bg_main)
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
 
@@ -160,7 +208,6 @@ class ImageApp:
         left_spacer = tk.Frame(top_bar, bg=self.bg_main)
         left_spacer.grid(row=0, column=0, sticky="w")
 
-        # ===== NAWIGACJA NA ŚRODKU =====
         nav_panel = tk.Frame(
             top_bar,
             bg=self.bg_panel,
@@ -216,7 +263,6 @@ class ImageApp:
         )
         self.next_button.grid(row=0, column=2, padx=6)
 
-        # ===== ZAPIS PO PRAWEJ =====
         save_panel = tk.Frame(
             top_bar,
             bg=self.bg_panel,
@@ -258,7 +304,6 @@ class ImageApp:
         )
         self.abort_button.pack(pady=4)
 
-        # ===== PANELE Z OBRAZAMI =====
         images_frame = tk.Frame(main_area, bg=self.bg_main)
         images_frame.grid(row=1, column=0, sticky="nsew")
 
@@ -336,7 +381,6 @@ class ImageApp:
             font=("Arial", 13)
         )
 
-        # ===== DÓŁ: PASEK + NAPIS =====
         bottom_frame = tk.Frame(self.root, bg=self.bg_main)
         bottom_frame.grid(row=2, column=0, columnspan=2, pady=(0, 14))
 
@@ -356,24 +400,97 @@ class ImageApp:
         )
         self.bottom_status_label.pack()
 
+        self.debug_label = tk.Label(
+            bottom_frame,
+            text="Załadowane=0 | Przetworzone=0 | Indeks=0/0 | Filtr=nie | Zapis=nie",
+            bg=self.bg_main,
+            fg=self.text_color,
+            font=("Arial", 9)
+        )
+        self.debug_label.pack(pady=(6, 0))
+
     def set_status(self, text):
         self.bottom_status_label.config(text=text)
 
-    def apply_selected_filter(self, image, selected_filter):
-        if selected_filter == "Grayscale":
-            return apply_grayscale(image)
-        elif selected_filter == "Blur":
-            return apply_blur(image)
-        elif selected_filter == "Edges":
-            return apply_edges(image)
-        elif selected_filter == "Binary":
-            return apply_binary(image)
-        else:
-            raise ValueError("Nieznany filtr")
+    def update_debug_info(self):
+        loaded_count = len(self.loaded_images)
+        processed_count = len(self.processed_results)
 
-    # ============================================================
-    # LOADER THREAD - URUCHAMIANIE WĄTKU WCZYTUJĄCEGO OBRAZ
-    # ============================================================
+        debug_text = (
+            f"Załadowane={loaded_count} | "
+            f"Przetworzone={processed_count} | "
+            f"Indeks={self.current_index + 1 if self.current_index >= 0 else 0}/"
+            f"{len(self.image_paths)} | "
+            f"Filtr={'tak' if self.processing_in_progress else 'nie'} | "
+            f"Zapis={'tak' if self.save_in_progress else 'nie'}"
+        )
+
+        self.debug_label.config(text=debug_text)
+        self.root.after(300, self.update_debug_info)
+
+    def update_image_index_progress(self):
+        if not self.image_paths:
+            self.image_index_progress["value"] = 0
+            return
+
+        total = len(self.image_paths)
+        processed = len(self.processed_results)
+        self.image_index_progress["value"] = (processed / total) * 100
+
+    def request_load_for_index(self, index):
+        if index < 0 or index >= len(self.image_paths):
+            return
+        if index in self.loaded_images:
+            return
+        if index in self.loading_requested:
+            return
+
+        self.loading_requested.add(index)
+        self.loader_task_queue.put({
+            "cmd": "LOAD_IMAGE",
+            "path": self.image_paths[index],
+            "index": index
+        })
+
+    def show_image_from_cache(self, index):
+        if index not in self.loaded_images:
+            return False
+
+        path, image = self.loaded_images[index]
+        self.current_image = image.copy()
+        self.display_image(self.current_image, "original")
+
+        if index in self.processed_results:
+            saved_result = self.processed_results[index]
+            self.processed_image = saved_result["image"].copy()
+            self.display_image(self.processed_image, "processed")
+        else:
+            self.processed_canvas.delete("all")
+            self.processed_canvas.create_text(
+                int(self.processed_canvas["width"]) // 2,
+                int(self.processed_canvas["height"]) // 2,
+                text="Brak obrazu",
+                font=("Arial", 13)
+            )
+            self.processed_image = None
+            self.processed_photo = None
+
+        self.progress["value"] = 0
+
+        file_name = os.path.basename(path)
+        processed_count = len(self.processed_results)
+
+        self.info_label.config(
+            text=(
+                f"Obraz {index + 1} z {len(self.image_paths)}\n"
+                f"{file_name}\n"
+                f"Przetworzone: {processed_count} z {len(self.image_paths)}"
+            )
+        )
+
+        self.update_image_index_progress()
+        self.set_status("Status: obraz pobrany z kolejki")
+        return True
 
     def load_image(self):
         file_path = filedialog.askopenfilename(
@@ -386,10 +503,18 @@ class ImageApp:
 
         self.image_paths = [file_path]
         self.current_index = 0
+        self.loaded_images.clear()
+        self.loading_requested.clear()
+        self.processed_results.clear()
 
         self.current_image = None
         self.processed_image = None
         self.processed_photo = None
+
+        self.processing_in_progress = False
+        self.save_in_progress = False
+        self.active_job_id = None
+        self.cancelled_jobs.clear()
 
         self.processed_canvas.delete("all")
         self.processed_canvas.create_text(
@@ -400,66 +525,11 @@ class ImageApp:
         )
 
         self.progress["value"] = 0
-        self.set_status("Status: uruchamianie Loader Thread...")
-
+        self.set_status("Status: dodano 1 obraz do LoaderThread")
         self.load_button.config(state="disabled")
 
-        self.loader_thread = threading.Thread(
-            target=loader_worker,
-            args=(file_path, self.loader_queue),
-            daemon=True
-        )
-        self.loader_thread.start()
-
-        self.root.after(100, self.check_loader_queue)
-
-    def check_loader_queue(self):
-        """
-        Ta metoda działa w głównym wątku GUI.
-        Odbiera wynik pracy Loader Thread z kolejki i dopiero tutaj aktualizuje interfejs.
-        """
-        try:
-            result = self.loader_queue.get_nowait()
-        except queue.Empty:
-            self.root.after(100, self.check_loader_queue)
-            return
-
-        self.load_button.config(state="normal")
-
-        if result["status"] == "success":
-            self.current_image = result["image"]
-
-            self.display_image(self.current_image, "original")
-
-            self.processed_canvas.delete("all")
-            self.processed_canvas.create_text(
-                int(self.processed_canvas["width"]) // 2,
-                int(self.processed_canvas["height"]) // 2,
-                text="Brak obrazu",
-                font=("Arial", 13)
-            )
-
-            self.processed_image = None
-            self.processed_photo = None
-            self.progress["value"] = 0
-
-            file_name = os.path.basename(result["path"])
-            self.info_label.config(
-                text=f"Obraz {self.current_index + 1} z {len(self.image_paths)}\n{file_name}"
-            )
-
-            self.set_status("Status: obraz wczytany przez Loader Thread")
-
-        else:
-            messagebox.showerror(
-                "Błąd",
-                f"Nie udało się wczytać obrazu:\n{result['error']}"
-            )
-            self.set_status("Status: błąd w Loader Thread")
-
-    # ============================================================
-    # POZOSTAŁE FUNKCJE - NA RAZIE DZIAŁAJĄ JAK WCZEŚNIEJ
-    # ============================================================
+        self.request_load_for_index(0)
+        self.update_image_index_progress()
 
     def load_folder(self):
         folder_path = filedialog.askdirectory(title="Wybierz folder ze zdjęciami")
@@ -482,37 +552,160 @@ class ImageApp:
 
         self.image_paths = files
         self.current_index = 0
-        self._load_image_from_index()
-        self.set_status(f"Status: wczytano folder ({len(files)} obrazów)")
+        self.loaded_images.clear()
+        self.loading_requested.clear()
+        self.processed_results.clear()
 
-    def _load_image_from_index(self):
-        if not self.image_paths or self.current_index < 0 or self.current_index >= len(self.image_paths):
+        self.current_image = None
+        self.processed_image = None
+        self.processed_photo = None
+
+        self.processing_in_progress = False
+        self.save_in_progress = False
+        self.active_job_id = None
+        self.cancelled_jobs.clear()
+
+        self.progress["value"] = 0
+
+        self.processed_canvas.delete("all")
+        self.processed_canvas.create_text(
+            int(self.processed_canvas["width"]) // 2,
+            int(self.processed_canvas["height"]) // 2,
+            text="Brak obrazu",
+            font=("Arial", 13)
+        )
+
+        self.set_status(f"Status: folder dodany ({len(files)} obrazów), ładowanie kolejki...")
+
+        self.request_load_for_index(0)
+        self.request_load_for_index(1)
+        self.update_image_index_progress()
+
+    def check_loader_queue(self):
+        try:
+            while True:
+                result = self.loader_result_queue.get_nowait()
+
+                self.load_button.config(state="normal")
+                index = result.get("index")
+
+                if result["status"] == "success":
+                    self.loaded_images[index] = (result["path"], result["image"])
+
+                    if index == self.current_index and self.current_image is None:
+                        self.show_image_from_cache(index)
+
+                    self.request_load_for_index(index + 1)
+                else:
+                    messagebox.showerror("Błąd", f"Nie udało się wczytać obrazu:\n{result['error']}")
+                    self.set_status("Status: błąd w LoaderThread")
+        except queue.Empty:
+            pass
+
+        self.root.after(100, self.check_loader_queue)
+
+    def start_processing(self):
+        if self.current_image is None:
+            self.set_status("Status: najpierw wczytaj obraz lub folder")
             return
 
+        if self.processing_in_progress:
+            self.set_status("Status: trwa już przetwarzanie")
+            return
+
+        selected_filter = self.filter_box.get()
+
+        job_id = self.next_job_id
+        self.next_job_id += 1
+        self.active_job_id = job_id
+        self.processing_in_progress = True
+
+        self.progress["value"] = 20
+        self.set_status(f"Status: dodano zadanie do FilterThread ({selected_filter})")
+        self.start_button.config(state="disabled")
+
+        self.filter_task_queue.put({
+            "cmd": "APPLY_FILTER",
+            "image": self.current_image.copy(),
+            "filter": selected_filter,
+            "job_id": job_id,
+            "image_index": self.current_index
+        })
+
+    def check_filter_queue(self):
         try:
-            path = self.image_paths[self.current_index]
-            self.current_image = Image.open(path)
-            self.display_image(self.current_image, "original")
+            while True:
+                result = self.filter_result_queue.get_nowait()
 
-            self.processed_canvas.delete("all")
-            self.processed_canvas.create_text(
-                int(self.processed_canvas["width"]) // 2,
-                int(self.processed_canvas["height"]) // 2,
-                text="Brak obrazu",
-                font=("Arial", 13)
-            )
+                result_job_id = result.get("job_id")
+                result_index = result.get("image_index")
 
-            self.processed_image = None
-            self.processed_photo = None
-            self.progress["value"] = 0
+                if result_job_id in self.cancelled_jobs:
+                    self.cancelled_jobs.discard(result_job_id)
+                    continue
 
-            file_name = os.path.basename(path)
-            self.info_label.config(
-                text=f"Obraz {self.current_index + 1} z {len(self.image_paths)}\n{file_name}"
-            )
-            self.set_status("Status: obraz wczytany")
-        except Exception as error:
-            messagebox.showerror("Błąd", f"Nie udało się wczytać obrazu:\n{error}")
+                if self.active_job_id is not None and result_job_id != self.active_job_id:
+                    continue
+
+                self.processing_in_progress = False
+                self.start_button.config(state="normal")
+                self.active_job_id = None
+
+                if result["status"] == "success":
+                    self.processed_results[result_index] = {
+                        "image": result["image"].copy(),
+                        "filter": result["filter"]
+                    }
+
+                    self.update_image_index_progress()
+
+                    if result_index == self.current_index:
+                        self.processed_image = result["image"]
+                        self.display_image(self.processed_image, "processed")
+                        self.progress["value"] = 100
+                        self.set_status(f"Status: zastosowano filtr {result['filter']} przez FilterThread")
+                    else:
+                        self.progress["value"] = 0
+                        self.set_status("Status: wynik zapisany dla innego zdjęcia")
+
+                    if result_index in self.loaded_images and result_index == self.current_index:
+                        path, _ = self.loaded_images[result_index]
+                        file_name = os.path.basename(path)
+                        processed_count = len(self.processed_results)
+                        self.info_label.config(
+                            text=(
+                                f"Obraz {self.current_index + 1} z {len(self.image_paths)}\n"
+                                f"{file_name}\n"
+                                f"Przetworzone: {processed_count} z {len(self.image_paths)}"
+                            )
+                        )
+                else:
+                    if result_index == self.current_index:
+                        self.progress["value"] = 0
+                    self.set_status("Status: błąd w FilterThread")
+                    messagebox.showerror("Błąd", f"Nie udało się przetworzyć obrazu:\n{result['error']}")
+        except queue.Empty:
+            pass
+
+        self.root.after(100, self.check_filter_queue)
+
+    def check_saver_queue(self):
+        try:
+            while True:
+                result = self.saver_result_queue.get_nowait()
+                self.save_in_progress = False
+                self.save_button.config(state="normal")
+
+                if result["status"] == "success":
+                    self.set_status("Status: zapis zakończony przez SaverThread")
+                    messagebox.showinfo("Zapisano", f"Plik zapisano w:\n{result['output_path']}")
+                else:
+                    self.set_status("Status: błąd w SaverThread")
+                    messagebox.showerror("Błąd", f"Nie udało się zapisać obrazu:\n{result['error']}")
+        except queue.Empty:
+            pass
+
+        self.root.after(100, self.check_saver_queue)
 
     def show_previous_image(self):
         if not self.image_paths:
@@ -520,7 +713,10 @@ class ImageApp:
 
         if self.current_index > 0:
             self.current_index -= 1
-            self._load_image_from_index()
+            if not self.show_image_from_cache(self.current_index):
+                self.current_image = None
+                self.set_status("Status: czekam na załadowanie obrazu...")
+                self.request_load_for_index(self.current_index)
 
     def show_next_image(self):
         if not self.image_paths:
@@ -528,37 +724,19 @@ class ImageApp:
 
         if self.current_index < len(self.image_paths) - 1:
             self.current_index += 1
-            self._load_image_from_index()
+            if not self.show_image_from_cache(self.current_index):
+                self.current_image = None
+                self.set_status("Status: czekam na załadowanie obrazu...")
+                self.request_load_for_index(self.current_index)
 
-    def start_processing(self):
-        if self.current_image is None:
-            self.set_status("Status: najpierw wczytaj obraz lub folder")
-            return
-
-        selected_filter = self.filter_box.get()
-        self.progress["value"] = 20
-        self.root.update_idletasks()
-
-        try:
-            self.processed_image = self.apply_selected_filter(self.current_image, selected_filter)
-
-            self.progress["value"] = 80
-            self.display_image(self.processed_image, "processed")
-            self.progress["value"] = 100
-            self.set_status(f"Status: zastosowano filtr {selected_filter}")
-
-        except Exception as error:
-            messagebox.showerror("Błąd", f"Nie udało się przetworzyć obrazu:\n{error}")
-            self.set_status("Status: błąd przetwarzania")
-            self.progress["value"] = 0
+            self.request_load_for_index(self.current_index + 1)
 
     def process_entire_folder(self):
-        if not self.image_paths or len(self.image_paths) == 0:
+        if not self.image_paths:
             self.set_status("Status: najpierw wczytaj folder")
             return
 
         output_folder = filedialog.askdirectory(title="Wybierz folder do zapisu wyników")
-
         if not output_folder:
             return
 
@@ -568,14 +746,21 @@ class ImageApp:
         try:
             for index, path in enumerate(self.image_paths):
                 image = Image.open(path)
-                processed = self.apply_selected_filter(image, selected_filter)
+
+                if selected_filter == "Grayscale":
+                    processed = apply_grayscale(image)
+                elif selected_filter == "Blur":
+                    processed = apply_blur(image)
+                elif selected_filter == "Edges":
+                    processed = apply_edges(image)
+                elif selected_filter == "Binary":
+                    processed = apply_binary(image)
+                else:
+                    raise ValueError("Nieznany filtr")
 
                 base_name = os.path.basename(path)
                 name, ext = os.path.splitext(base_name)
-                output_path = os.path.join(
-                    output_folder,
-                    f"{name}_{selected_filter.lower()}{ext}"
-                )
+                output_path = os.path.join(output_folder, f"{name}_{selected_filter.lower()}{ext}")
 
                 processed.save(output_path)
 
@@ -587,7 +772,6 @@ class ImageApp:
                 "Gotowe",
                 f"Przetworzono {total_files} obrazów.\nWyniki zapisano w:\n{output_folder}"
             )
-
         except Exception as error:
             messagebox.showerror("Błąd", f"Nie udało się przetworzyć folderu:\n{error}")
             self.set_status("Status: błąd przetwarzania folderu")
@@ -596,6 +780,10 @@ class ImageApp:
     def save_result(self):
         if self.processed_image is None:
             self.set_status("Status: brak wyniku do zapisania")
+            return
+
+        if self.save_in_progress:
+            self.set_status("Status: trwa już zapis")
             return
 
         answer = messagebox.askyesnocancel(
@@ -624,13 +812,8 @@ class ImageApp:
 
                 selected_filter = self.filter_box.get().lower()
                 output_path = os.path.join(results_dir, f"{name}_{selected_filter}{ext}")
-
-                self.processed_image.save(output_path)
-                self.set_status("Status: zapisano do folderu results")
-                messagebox.showinfo("Zapisano", f"Plik zapisano w:\n{output_path}")
-
             else:
-                file_path = filedialog.asksaveasfilename(
+                output_path = filedialog.asksaveasfilename(
                     title="Zapisz wynik",
                     defaultextension=".png",
                     filetypes=[
@@ -639,21 +822,41 @@ class ImageApp:
                         ("BMP file", "*.bmp")
                     ]
                 )
-
-                if not file_path:
+                if not output_path:
                     self.set_status("Status: zapis anulowany")
                     return
 
-                self.processed_image.save(file_path)
-                self.set_status("Status: wynik zapisany")
-                messagebox.showinfo("Zapisano", f"Plik zapisano w:\n{file_path}")
+            self.save_in_progress = True
+            self.save_button.config(state="disabled")
+            self.set_status("Status: dodano zadanie do SaverThread")
 
+            self.saver_task_queue.put({
+                "cmd": "SAVE_IMAGE",
+                "image": self.processed_image.copy(),
+                "output_path": output_path
+            })
         except Exception as error:
-            messagebox.showerror("Błąd", f"Nie udało się zapisać obrazu:\n{error}")
+            self.save_in_progress = False
+            messagebox.showerror("Błąd", f"Nie udało się przygotować zapisu:\n{error}")
 
     def abort_processing(self):
+        if not self.processing_in_progress or self.active_job_id is None:
+            self.set_status("Status: brak aktywnej operacji do anulowania")
+            self.progress["value"] = 0
+            return
+
+        self.cancelled_jobs.add(self.active_job_id)
+        self.active_job_id = None
+        self.processing_in_progress = False
+        self.start_button.config(state="normal")
         self.progress["value"] = 0
-        self.set_status("Status: przerwano")
+        self.set_status("Status: anulowano operację")
+
+    def on_close(self):
+        self.loader_task_queue.put({"cmd": "STOP"})
+        self.filter_task_queue.put({"cmd": "STOP"})
+        self.saver_task_queue.put({"cmd": "STOP"})
+        self.root.destroy()
 
     def display_image(self, image, target):
         preview = image.copy()

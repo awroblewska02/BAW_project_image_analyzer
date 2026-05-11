@@ -1,18 +1,18 @@
 import threading
 import queue
-from PIL import Image
+import os
 
 
-class LoaderThread(threading.Thread):
+class SaverThread(threading.Thread):
     def __init__(self, task_queue, result_queue):
-        super().__init__(daemon=True, name="LoaderThread")
+        super().__init__(daemon=True, name="SaverThread")
         self.task_queue = task_queue
         self.result_queue = result_queue
         self.running = True
 
     def run(self):
-        print("Loader thread started:", threading.current_thread().name)
-        print("Loader thread id:", threading.get_ident())
+        print("Saver thread started:", threading.current_thread().name)
+        print("Saver thread id:", threading.get_ident())
 
         while self.running:
             try:
@@ -26,24 +26,23 @@ class LoaderThread(threading.Thread):
                 self.running = False
                 break
 
-            if command == "LOAD_IMAGE":
-                file_path = task.get("path")
-                index = task.get("index")
+            if command == "SAVE_IMAGE":
+                image = task.get("image")
+                output_path = task.get("output_path")
 
                 try:
-                    image = Image.open(file_path)
-                    image.load()
+                    folder = os.path.dirname(output_path)
+                    if folder:
+                        os.makedirs(folder, exist_ok=True)
+
+                    image.save(output_path)
 
                     self.result_queue.put({
                         "status": "success",
-                        "path": file_path,
-                        "index": index,
-                        "image": image
+                        "output_path": output_path
                     })
                 except Exception as error:
                     self.result_queue.put({
                         "status": "error",
-                        "path": file_path,
-                        "index": index,
                         "error": str(error)
                     })
