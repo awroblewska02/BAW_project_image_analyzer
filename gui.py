@@ -7,7 +7,7 @@ from PIL import Image, ImageTk
 
 from image_filters import apply_grayscale, apply_blur, apply_edges, apply_binary
 from loader_thread import LoaderThread
-from filter_thread import FilterThread
+from image_analyzer_thread import ImageAnalyzerThread
 from saver_thread import SaverThread
 from controller_thread import ControllerThread
 
@@ -19,8 +19,8 @@ class ImageApp:
 
         self.root = tk.Tk()
         self.root.title("Analizator obrazów")
-        self.root.geometry("1320x840")
-        self.root.minsize(1180, 780)
+        self.root.geometry("1320x860")
+        self.root.minsize(1180, 800)
 
         self.bg_main = "#dff4ff"
         self.bg_panel = "#cfefff"
@@ -45,8 +45,9 @@ class ImageApp:
         self.loader_task_queue = queue.Queue()
         self.loader_result_queue = queue.Queue()
 
-        self.filter_task_queue = queue.Queue()
-        self.filter_result_queue = queue.Queue()
+        self.analyzer_task_queue = queue.Queue()
+        self.analyzer_result_queue = queue.Queue()
+        self.analyzer_state = "WAITING"
 
         self.saver_task_queue = queue.Queue()
         self.saver_result_queue = queue.Queue()
@@ -70,9 +71,9 @@ class ImageApp:
             self.loader_result_queue
         )
 
-        self.filter_thread = FilterThread(
-            self.filter_task_queue,
-            self.filter_result_queue
+        self.image_analyzer_thread = ImageAnalyzerThread(
+            self.analyzer_task_queue,
+            self.analyzer_result_queue
         )
 
         self.saver_thread = SaverThread(
@@ -86,14 +87,14 @@ class ImageApp:
         )
 
         self.loader_thread.start()
-        self.filter_thread.start()
+        self.image_analyzer_thread.start()
         self.saver_thread.start()
         self.controller_thread.start()
 
         self._build_ui()
 
         self.root.after(100, self.check_loader_queue)
-        self.root.after(100, self.check_filter_queue)
+        self.root.after(100, self.check_analyzer_queue)
         self.root.after(100, self.check_saver_queue)
         self.root.after(100, self.check_controller_queue)
         self.root.after(300, self.update_debug_info)
@@ -423,9 +424,18 @@ class ImageApp:
         )
         self.controller_state_label.pack(pady=(4, 0))
 
+        self.analyzer_state_label = tk.Label(
+            bottom_frame,
+            text="Stan analizatora: WAITING",
+            bg=self.bg_main,
+            fg=self.text_color,
+            font=("Arial", 10, "bold")
+        )
+        self.analyzer_state_label.pack(pady=(4, 0))
+
         self.debug_label = tk.Label(
             bottom_frame,
-            text="Załadowane=0 | Przetworzone=0 | Indeks=0/0 | Filtr=nie | Zapis=nie",
+            text="Załadowane=0 | Przetworzone=0 | Indeks=0/0 | Analiza=nie | Zapis=nie",
             bg=self.bg_main,
             fg=self.text_color,
             font=("Arial", 9)
@@ -466,6 +476,97 @@ class ImageApp:
 
         self.root.after(100, self.check_controller_queue)
 
+    def check_analyzer_queue(self):
+        try:
+            while True:
+                result = self.analyzer_result_queue.get_nowait()
+
+                result_type = result.get("type")
+
+                if result_type == "state":
+                    self.analyzer_state = result["new_state"]
+                    event = result.get("event", "")
+
+                    self.analyzer_state_label.config(
+                        text=f"Stan analizatora: {self.analyzer_state}"
+                    )
+
+                    if event:
+                        print(
+                            f"Analyzer state: {result['old_state']} -> "
+                            f"{result['new_state']} | event: {event}"
+                        )
+
+                    continue
+
+                if result_type == "result":
+                    result_job_id = result.get("job_id")
+                    result_index = result.get("image_index")
+
+                    if result_job_id in self.cancelled_jobs:
+                        self.cancelled_jobs.discard(result_job_id)
+                        continue
+
+                    if self.active_job_id is not None and result_job_id != self.active_job_id:
+                        continue
+
+                    self.processing_in_progress = False
+                    self.start_button.config(state="normal")
+                    self.active_job_id = None
+
+                    if result["status"] == "success":
+                        self.processed_results[result_index] = {
+                            "image": result["image"].copy(),
+                            "filter": result["filter"]
+                        }
+
+                        self.update_image_index_progress()
+
+                        if result_index == self.current_index:
+                            self.processed_image = result["image"]
+                            self.display_image(self.processed_image, "processed")
+                            self.progress["value"] = 100
+                            self.set_status(
+                                f"Status: zastosowano algorytm {result['filter']} przez ImageAnalyzerThread"
+                            )
+                            self.request_controller_state("READY", "Analiza obrazu zakończona")
+                        else:
+                            self.progress["value"] = 0
+                            self.set_status("Status: wynik zapisany dla innego zdjęcia")
+                            self.request_controller_state("READY", "Analiza zakończona dla innego obrazu")
+
+                        if result_index in self.loaded_images and result_index == self.current_index:
+                            path, _ = self.loaded_images[result_index]
+                            file_name = os.path.basename(path)
+                            processed_count = len(self.processed_results)
+                            self.info_label.config(
+                                text=(
+                                    f"Obraz {self.current_index + 1} z {len(self.image_paths)}\n"
+                                    f"{file_name}\n"
+                                    f"Przetworzone: {processed_count} z {len(self.image_paths)}"
+                                )
+                            )
+
+                    else:
+                        if result_index == self.current_index:
+                            self.progress["value"] = 0
+
+                        self.processing_in_progress = False
+                        self.start_button.config(state="normal")
+                        self.active_job_id = None
+
+                        self.set_status("Status: błąd w ImageAnalyzerThread")
+                        self.request_controller_state("ERROR", "Błąd analizy obrazu")
+                        messagebox.showerror(
+                            "Błąd",
+                            f"Nie udało się przeanalizować obrazu:\n{result['error']}"
+                        )
+
+        except queue.Empty:
+            pass
+
+        self.root.after(100, self.check_analyzer_queue)
+
     def update_debug_info(self):
         loaded_count = len(self.loaded_images)
         processed_count = len(self.processed_results)
@@ -475,7 +576,7 @@ class ImageApp:
             f"Przetworzone={processed_count} | "
             f"Indeks={self.current_index + 1 if self.current_index >= 0 else 0}/"
             f"{len(self.image_paths)} | "
-            f"Filtr={'tak' if self.processing_in_progress else 'nie'} | "
+            f"Analiza={'tak' if self.processing_in_progress else 'nie'} | "
             f"Zapis={'tak' if self.save_in_progress else 'nie'}"
         )
 
@@ -546,7 +647,7 @@ class ImageApp:
         self.set_status("Status: obraz pobrany z kolejki")
 
         if not self.processing_in_progress and not self.save_in_progress:
-            self.request_controller_state("READY", "Obraz gotowy do przetwarzania")
+            self.request_controller_state("READY", "Obraz gotowy do analizy")
 
         return True
 
@@ -673,7 +774,7 @@ class ImageApp:
             return
 
         if self.processing_in_progress:
-            self.set_status("Status: trwa już przetwarzanie")
+            self.set_status("Status: trwa już analiza obrazu")
             return
 
         selected_filter = self.filter_box.get()
@@ -684,79 +785,18 @@ class ImageApp:
         self.processing_in_progress = True
 
         self.progress["value"] = 20
-        self.set_status(f"Status: dodano zadanie do FilterThread ({selected_filter})")
-        self.request_controller_state("PROCESSING", f"Przetwarzanie filtrem {selected_filter}")
+        self.set_status(f"Status: dodano zadanie do ImageAnalyzerThread ({selected_filter})")
+        self.request_controller_state("PROCESSING", f"Analiza filtrem {selected_filter}")
 
         self.start_button.config(state="disabled")
 
-        self.filter_task_queue.put({
-            "cmd": "APPLY_FILTER",
+        self.analyzer_task_queue.put({
+            "cmd": "ANALYZE_IMAGE",
             "image": self.current_image.copy(),
             "filter": selected_filter,
             "job_id": job_id,
             "image_index": self.current_index
         })
-
-    def check_filter_queue(self):
-        try:
-            while True:
-                result = self.filter_result_queue.get_nowait()
-
-                result_job_id = result.get("job_id")
-                result_index = result.get("image_index")
-
-                if result_job_id in self.cancelled_jobs:
-                    self.cancelled_jobs.discard(result_job_id)
-                    continue
-
-                if self.active_job_id is not None and result_job_id != self.active_job_id:
-                    continue
-
-                self.processing_in_progress = False
-                self.start_button.config(state="normal")
-                self.active_job_id = None
-
-                if result["status"] == "success":
-                    self.processed_results[result_index] = {
-                        "image": result["image"].copy(),
-                        "filter": result["filter"]
-                    }
-
-                    self.update_image_index_progress()
-
-                    if result_index == self.current_index:
-                        self.processed_image = result["image"]
-                        self.display_image(self.processed_image, "processed")
-                        self.progress["value"] = 100
-                        self.set_status(f"Status: zastosowano filtr {result['filter']} przez FilterThread")
-                        self.request_controller_state("READY", "Przetwarzanie zakończone")
-                    else:
-                        self.progress["value"] = 0
-                        self.set_status("Status: wynik zapisany dla innego zdjęcia")
-                        self.request_controller_state("READY", "Przetwarzanie zakończone dla innego obrazu")
-
-                    if result_index in self.loaded_images and result_index == self.current_index:
-                        path, _ = self.loaded_images[result_index]
-                        file_name = os.path.basename(path)
-                        processed_count = len(self.processed_results)
-                        self.info_label.config(
-                            text=(
-                                f"Obraz {self.current_index + 1} z {len(self.image_paths)}\n"
-                                f"{file_name}\n"
-                                f"Przetworzone: {processed_count} z {len(self.image_paths)}"
-                            )
-                        )
-                else:
-                    if result_index == self.current_index:
-                        self.progress["value"] = 0
-                    self.set_status("Status: błąd w FilterThread")
-                    self.request_controller_state("ERROR", "Błąd przetwarzania obrazu")
-                    messagebox.showerror("Błąd", f"Nie udało się przetworzyć obrazu:\n{result['error']}")
-
-        except queue.Empty:
-            pass
-
-        self.root.after(100, self.check_filter_queue)
 
     def check_saver_queue(self):
         try:
@@ -933,11 +973,11 @@ class ImageApp:
         self.start_button.config(state="normal")
         self.progress["value"] = 0
         self.set_status("Status: anulowano operację")
-        self.request_controller_state("ABORTED", "Anulowano aktywną operację")
+        self.request_controller_state("ABORTED", "Anulowano aktywną analizę obrazu")
 
     def on_close(self):
         self.loader_task_queue.put({"cmd": "STOP"})
-        self.filter_task_queue.put({"cmd": "STOP"})
+        self.analyzer_task_queue.put({"cmd": "STOP"})
         self.saver_task_queue.put({"cmd": "STOP"})
         self.controller_task_queue.put({"cmd": "STOP"})
         self.root.destroy()
