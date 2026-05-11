@@ -60,7 +60,7 @@ class ImageAnalyzerThread(threading.Thread):
                 worker = threading.current_thread().name
 
                 try:
-                    self.change_state("PREPARING", f"{worker}: przygotowanie obrazu do analizy")
+                    self.change_state("PREPARING", f"{worker}: przygotowanie obrazu do przetwarzania")
 
                     image_to_process = image.copy()
 
@@ -80,7 +80,7 @@ class ImageAnalyzerThread(threading.Thread):
                     else:
                         raise ValueError("Nieznany filtr")
 
-                    self.change_state("FINISHED", f"{worker}: analiza obrazu zakończona")
+                    self.change_state("FINISHED", f"{worker}: przetwarzanie obrazu zakończone")
 
                     self.result_queue.put({
                         "type": "result",

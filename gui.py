@@ -561,7 +561,7 @@ class ImageApp:
 
                             self.set_status(
                                 f"Status: obraz {result_index + 1}/{self.batch_total} "
-                                f"przeanalizowany przez {worker}, przekazany do SaverThread"
+                                f"przetworzony przez {worker}, przekazany do SaverThread"
                             )
                             continue
 
@@ -583,11 +583,11 @@ class ImageApp:
                             self.set_status(
                                 f"Status: zastosowano algorytm {result['filter']} przez {worker}"
                             )
-                            self.request_controller_state("READY", "Analiza obrazu zakończona")
+                            self.request_controller_state("READY", "Przetwarzanie obrazu zakończone")
                         else:
                             self.progress["value"] = 0
                             self.set_status("Status: wynik zapisany dla innego zdjęcia")
-                            self.request_controller_state("READY", "Analiza zakończona dla innego obrazu")
+                            self.request_controller_state("READY", "Przetwarzanie zakończone dla innego obrazu")
 
                         if result_index in self.loaded_images and result_index == self.current_index:
                             path, _ = self.loaded_images[result_index]
@@ -608,11 +608,11 @@ class ImageApp:
                             self.start_button.config(state="normal")
                             self.process_all_button.config(state="normal")
 
-                            self.set_status(f"Status: błąd analizy w trybie folderu ({worker})")
-                            self.request_controller_state("ERROR", "Błąd analizy folderu")
+                            self.set_status(f"Status: błąd przetwarzania w trybie folderu ({worker})")
+                            self.request_controller_state("ERROR", "Błąd przetwarzania folderu")
                             messagebox.showerror(
                                 "Błąd",
-                                f"Nie udało się przeanalizować jednego z obrazów:\n{result['error']}"
+                                f"Nie udało się przetworzyć jednego z obrazów:\n{result['error']}"
                             )
                             continue
 
@@ -624,10 +624,10 @@ class ImageApp:
                         self.active_job_id = None
 
                         self.set_status(f"Status: błąd w {worker}")
-                        self.request_controller_state("ERROR", "Błąd analizy obrazu")
+                        self.request_controller_state("ERROR", "Błąd przetwarzania obrazu")
                         messagebox.showerror(
                             "Błąd",
-                            f"Nie udało się przeanalizować obrazu:\n{result['error']}"
+                            f"Nie udało się przetworzyć obrazu:\n{result['error']}"
                         )
 
         except queue.Empty:
@@ -723,7 +723,7 @@ class ImageApp:
         self.set_status("Status: obraz pobrany z kolejki")
 
         if not self.processing_in_progress and not self.save_in_progress:
-            self.request_controller_state("READY", "Obraz gotowy do analizy")
+            self.request_controller_state("READY", "Obraz gotowy do przetwarzania")
 
         return True
 
@@ -889,7 +889,7 @@ class ImageApp:
             return
 
         if self.processing_in_progress:
-            self.set_status("Status: trwa już analiza obrazu")
+            self.set_status("Status: trwa już przetwarzanie obrazu")
             return
 
         selected_filter = self.filter_box.get()
@@ -901,7 +901,7 @@ class ImageApp:
 
         self.progress["value"] = 20
         self.set_status(f"Status: dodano zadanie do ImageAnalyzerThread ({selected_filter})")
-        self.request_controller_state("PROCESSING", f"Analiza filtrem {selected_filter}")
+        self.request_controller_state("PROCESSING", f"Przetwarzanie filtrem {selected_filter}")
 
         self.start_button.config(state="disabled")
 
@@ -1018,7 +1018,7 @@ class ImageApp:
 
         # Automatyczny folder zapisu wyników całego folderu
         project_dir = os.path.dirname(os.path.abspath(__file__))
-        output_folder = os.path.join(project_dir, "results_caly")
+        output_folder = os.path.join(project_dir, "batch_results")
         os.makedirs(output_folder, exist_ok=True)
 
         self.batch_processing = True
@@ -1038,11 +1038,11 @@ class ImageApp:
 
         self.set_status(
             f"Status: dodano folder do kolejek Producer–Consumer "
-            f"({self.batch_total} obrazów), zapis do results_caly"
+            f"({self.batch_total} obrazów), zapis do batch_results"
         )
         self.request_controller_state(
             "PROCESSING",
-            "Przetwarzanie całego folderu przez wątki, zapis do results_caly"
+            "Przetwarzanie całego folderu przez wątki, zapis do batch_results"
         )
 
         for index, path in enumerate(self.image_paths):
@@ -1175,7 +1175,7 @@ class ImageApp:
         self.start_button.config(state="normal")
         self.progress["value"] = 0
         self.set_status("Status: anulowano operację")
-        self.request_controller_state("ABORTED", "Anulowano aktywną analizę obrazu")
+        self.request_controller_state("ABORTED", "Anulowano aktywne przetwarzanie obrazu")
 
     def on_close(self):
         self.loader_task_queue.put({"cmd": "STOP"})
