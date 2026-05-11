@@ -1,7 +1,14 @@
 import threading
 import queue
 import time
-from image_filters import apply_grayscale, apply_blur, apply_edges, apply_binary
+from image_filters import (
+    apply_grayscale,
+    apply_blur,
+    apply_edges,
+    apply_binary,
+    apply_sharpen,
+    apply_invert
+)
 
 
 class ImageAnalyzerThread(threading.Thread):
@@ -77,6 +84,10 @@ class ImageAnalyzerThread(threading.Thread):
                         processed_image = apply_edges(image_to_process)
                     elif selected_filter == "Binary":
                         processed_image = apply_binary(image_to_process)
+                    elif selected_filter == "Sharpen":
+                        processed_image = apply_sharpen(image_to_process)
+                    elif selected_filter == "Invert":
+                        processed_image = apply_invert(image_to_process)
                     else:
                         raise ValueError("Nieznany filtr")
 

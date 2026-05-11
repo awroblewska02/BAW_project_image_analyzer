@@ -197,7 +197,7 @@ class ImageApp:
 
         self.filter_box = ttk.Combobox(
             left_panel,
-            values=["Grayscale", "Blur", "Edges", "Binary"],
+            values=["Grayscale", "Blur", "Edges", "Binary", "Sharpen", "Invert"],
             state="readonly",
             width=16,
             font=("Arial", 10)
